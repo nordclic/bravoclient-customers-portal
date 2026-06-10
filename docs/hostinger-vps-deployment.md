@@ -66,7 +66,7 @@ Sur d'autres installations Hostinger, le nom peut aussi etre `traefik`, `traefik
 Puis lancer :
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose up -d --build
 ```
 
 ## Migrations Prisma
@@ -74,7 +74,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 Apres le premier deploiement :
 
 ```bash
-docker compose -f docker-compose.prod.yml exec app npx prisma migrate deploy
+docker compose exec app npx prisma migrate deploy
 ```
 
 ## URLs
@@ -107,5 +107,5 @@ Minimum recommande :
 Commande de dump :
 
 ```bash
-docker compose -f docker-compose.prod.yml exec postgres pg_dump -U bravoclient bravoclient > bravoclient.sql
+docker compose exec postgres pg_dump -U bravoclient bravoclient > bravoclient.sql
 ```

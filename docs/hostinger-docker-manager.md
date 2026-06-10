@@ -1,6 +1,6 @@
 # Hostinger Docker Manager
 
-Le gestionnaire Docker Hostinger propose plusieurs modes de creation. Pour BravoClient, le choix depend de la facon dont l'image de l'application Next.js est fournie.
+Le gestionnaire Docker Hostinger propose plusieurs modes de creation. Pour BravoClient, le fichier de production par defaut est `docker-compose.yml`.
 
 ## Option recommandee
 

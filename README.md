@@ -19,7 +19,7 @@ Portail interne pour centraliser les clients BravoClient, synchroniser Stripe et
 2. Lancer PostgreSQL avec Docker :
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.local.yml up -d
 ```
 
 3. Installer les dependances :
