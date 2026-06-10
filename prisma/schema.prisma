@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CustomerStatus {
+  LEAD
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  ARCHIVED
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+model Customer {
+  id                   String         @id @default(cuid())
+  companyName          String         @map("company_name")
+  contactName          String?        @map("contact_name")
+  email                String         @unique
+  phone                String?
+  status               CustomerStatus @default(LEAD)
+  plan                 String?
+  trialEndsAt          DateTime?      @map("trial_ends_at")
+  stripeCustomerId     String?        @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?        @unique @map("stripe_subscription_id")
+  climboAccountId      String?        @unique @map("climbo_account_id")
+  climboSyncStatus     SyncStatus     @default(PENDING) @map("climbo_sync_status")
+  climboLastSyncedAt   DateTime?      @map("climbo_last_synced_at")
+  notes                String?
+  metadata             Json?
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  syncEvents SyncEvent[]
+
+  @@index([status])
+  @@index([climboSyncStatus])
+  @@map("customers")
+}
+
+model SyncEvent {
+  id         String     @id @default(cuid())
+  customerId String?    @map("customer_id")
+  customer   Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  provider   String
+  eventType  String     @map("event_type")
+  status     SyncStatus @default(PENDING)
+  payload    Json?
+  error      String?
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  @@index([provider, eventType])
+  @@index([status])
+  @@map("sync_events")
+}

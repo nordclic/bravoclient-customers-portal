@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  directus:
+    image: directus/directus:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KEY: ${DIRECTUS_KEY}
+      SECRET: ${DIRECTUS_SECRET}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD}
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PUBLIC_URL: ${DIRECTUS_PUBLIC_URL}
+    volumes:
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+    networks:
+      - internal
+      - traefik_proxy
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.bravoclient-directus.rule: Host(`${DIRECTUS_DOMAIN}`)
+      traefik.http.routers.bravoclient-directus.entrypoints: websecure
+      traefik.http.routers.bravoclient-directus.tls: "true"
+      traefik.http.routers.bravoclient-directus.tls.certresolver: ${TRAEFIK_CERT_RESOLVER}
+      traefik.http.services.bravoclient-directus.loadbalancer.server.port: "8055"
+      traefik.docker.network: ${TRAEFIK_NETWORK}
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      APP_URL: ${APP_URL}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      CLIMBO_API_BASE_URL: ${CLIMBO_API_BASE_URL}
+      CLIMBO_API_KEY: ${CLIMBO_API_KEY}
+    networks:
+      - internal
+      - traefik_proxy
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.bravoclient-app.rule: Host(`${APP_DOMAIN}`)
+      traefik.http.routers.bravoclient-app.entrypoints: websecure
+      traefik.http.routers.bravoclient-app.tls: "true"
+      traefik.http.routers.bravoclient-app.tls.certresolver: ${TRAEFIK_CERT_RESOLVER}
+      traefik.http.services.bravoclient-app.loadbalancer.server.port: "3000"
+      traefik.docker.network: ${TRAEFIK_NETWORK}
+
+volumes:
+  postgres_data:
+  directus_uploads:
+  directus_extensions:
+
+networks:
+  internal:
+    name: bravoclient_internal
+  traefik_proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK}
