@@ -47,37 +47,15 @@ Modifier `.env` avec les vrais secrets.
 
 Verifier aussi `TRAEFIK_CERT_RESOLVER`. Le template Hostinger peut utiliser un nom de resolver different de `letsencrypt`. Si le domaine ne passe pas en HTTPS, c'est le premier champ a controler.
 
-Verifier ensuite le reseau Docker utilise par Traefik :
+Verifier ensuite le mode reseau de Traefik :
 
 ```bash
-docker network ls
+docker inspect traefik-traefik-1 --format '{{.HostConfig.NetworkMode}}'
 ```
 
-Creer un reseau Docker partage entre Traefik et BravoClient :
+Sur ce VPS Hostinger, Traefik utilise le mode reseau `host`. Il ne faut donc pas le connecter a un reseau Docker externe.
 
-```bash
-docker network create bravoclient_proxy
-```
-
-Trouver le nom du conteneur Traefik :
-
-```bash
-docker ps --format "table {{.Names}}\t{{.Image}}" | grep -i traefik
-```
-
-Puis connecter Traefik au reseau, en remplacant `<traefik-container>` :
-
-```bash
-docker network connect bravoclient_proxy <traefik-container>
-```
-
-Reporter le reseau dans `.env` :
-
-```env
-TRAEFIK_NETWORK=bravoclient_proxy
-```
-
-Sur d'autres installations Hostinger, le nom peut aussi etre `traefik`, `traefik_default` ou `proxy`. Si ce champ est mauvais, les conteneurs demarrent mais Traefik ne peut pas les router.
+Si Traefik n'est pas en mode `host` sur une autre installation, adapter le compose avec un reseau proxy partage.
 
 Puis lancer :
 

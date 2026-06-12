@@ -39,7 +39,6 @@ services:
       - directus_extensions:/directus/extensions
     networks:
       - internal
-      - traefik_proxy
     labels:
       traefik.enable: "true"
       traefik.http.routers.bravoclient-directus.rule: Host(`${DIRECTUS_DOMAIN}`)
@@ -47,7 +46,6 @@ services:
       traefik.http.routers.bravoclient-directus.tls: "true"
       traefik.http.routers.bravoclient-directus.tls.certresolver: ${TRAEFIK_CERT_RESOLVER}
       traefik.http.services.bravoclient-directus.loadbalancer.server.port: "8055"
-      traefik.docker.network: ${TRAEFIK_NETWORK}
 
   app:
     build:
@@ -66,7 +64,6 @@ services:
       CLIMBO_API_KEY: ${CLIMBO_API_KEY}
     networks:
       - internal
-      - traefik_proxy
     labels:
       traefik.enable: "true"
       traefik.http.routers.bravoclient-app.rule: Host(`${APP_DOMAIN}`)
@@ -74,7 +71,6 @@ services:
       traefik.http.routers.bravoclient-app.tls: "true"
       traefik.http.routers.bravoclient-app.tls.certresolver: ${TRAEFIK_CERT_RESOLVER}
       traefik.http.services.bravoclient-app.loadbalancer.server.port: "3000"
-      traefik.docker.network: ${TRAEFIK_NETWORK}
 
 volumes:
   postgres_data:
@@ -84,6 +80,3 @@ volumes:
 networks:
   internal:
     name: bravoclient_internal
-  traefik_proxy:
-    external: true
-    name: ${TRAEFIK_NETWORK}

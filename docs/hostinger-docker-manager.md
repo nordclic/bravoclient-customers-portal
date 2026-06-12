@@ -51,8 +51,4 @@ dt.bravoclient.co  A  72.62.30.189
 
 ## Reglage Traefik confirme
 
-Le VPS Hostinger ne montre pas de reseau Traefik dedie dans `docker network ls`. On cree donc un reseau utilisateur dedie :
-
-```env
-TRAEFIK_NETWORK=bravoclient_proxy
-```
+Le conteneur `traefik-traefik-1` utilise le mode reseau `host`. Il ne peut pas etre connecte a un autre reseau Docker. Le compose BravoClient s'appuie donc sur les labels Traefik sans reseau externe dedie.
