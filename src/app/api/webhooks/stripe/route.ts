@@ -40,13 +40,16 @@ export async function POST(request: Request) {
     event.type === "customer.subscription.created" ||
     event.type === "customer.subscription.updated"
   ) {
-    await handleSubscriptionEvent(event.data.object);
+    await handleSubscriptionEvent(stripe, event.data.object);
   }
 
   return NextResponse.json({ received: true });
 }
 
-async function handleSubscriptionEvent(subscription: Stripe.Subscription) {
+async function handleSubscriptionEvent(
+  stripe: Stripe,
+  subscription: Stripe.Subscription,
+) {
   const stripeCustomerId =
     typeof subscription.customer === "string"
       ? subscription.customer
