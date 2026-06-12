@@ -51,8 +51,8 @@ dt.bravoclient.co  A  72.62.30.189
 
 ## Reglage Traefik confirme
 
-Le VPS Hostinger ne montre pas de reseau Traefik dedie dans `docker network ls`. La configuration actuelle utilise donc :
+Le VPS Hostinger ne montre pas de reseau Traefik dedie dans `docker network ls`. On cree donc un reseau utilisateur dedie :
 
 ```env
-TRAEFIK_NETWORK=bridge
+TRAEFIK_NETWORK=bravoclient_proxy
 ```

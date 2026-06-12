@@ -53,13 +53,29 @@ Verifier ensuite le reseau Docker utilise par Traefik :
 docker network ls
 ```
 
-Reporter le bon nom dans `.env` :
+Creer un reseau Docker partage entre Traefik et BravoClient :
 
-```env
-TRAEFIK_NETWORK=bridge
+```bash
+docker network create bravoclient_proxy
 ```
 
-Sur ce VPS Hostinger, `docker network ls` montre `bridge`, `directus-jjds_default`, `gld-generator_default`, `host` et `none`, mais pas de reseau Traefik dedie. On utilise donc `bridge`.
+Trouver le nom du conteneur Traefik :
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Image}}" | grep -i traefik
+```
+
+Puis connecter Traefik au reseau, en remplacant `<traefik-container>` :
+
+```bash
+docker network connect bravoclient_proxy <traefik-container>
+```
+
+Reporter le reseau dans `.env` :
+
+```env
+TRAEFIK_NETWORK=bravoclient_proxy
+```
 
 Sur d'autres installations Hostinger, le nom peut aussi etre `traefik`, `traefik_default` ou `proxy`. Si ce champ est mauvais, les conteneurs demarrent mais Traefik ne peut pas les router.
 
