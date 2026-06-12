@@ -55,3 +55,5 @@ Le connecteur `src/lib/climbo.ts` utilise un endpoint placeholder `/accounts`. I
 Voir `docs/hostinger-vps-deployment.md`.
 
 Pour le gestionnaire Docker Hostinger, voir `docs/hostinger-docker-manager.md`.
+
+Pour la protection Cloudflare, voir `docs/cloudflare-protection.md`.
