@@ -4,9 +4,25 @@
 
 Ajouter une couche Cloudflare devant `cp.bravoclient.co`, en plus de la Basic Auth deja presente dans l'application.
 
+Les webhooks Stripe utilisent un hostname separe :
+
+```text
+hooks.bravoclient.co
+```
+
+Cela evite de devoir contourner Cloudflare Access sur le meme hostname que le portail.
+
 ## DNS
 
 Dans Cloudflare, repasser `cp.bravoclient.co` en mode **Proxied** apres validation HTTPS.
+
+Creer aussi :
+
+```text
+hooks.bravoclient.co  A  72.62.30.189
+```
+
+`hooks.bravoclient.co` peut rester en **DNS only** au debut. Si le proxy Cloudflare est active plus tard, ne pas lui appliquer Cloudflare Access.
 
 Conserver `dt.bravoclient.co` selon le besoin :
 
@@ -39,16 +55,13 @@ Include: Emails
 Emails: les adresses autorisees
 ```
 
-Important : les endpoints techniques doivent rester accessibles aux services externes.
-
-Exclusions a prevoir :
+Important : ne pas proteger le hostname technique :
 
 ```text
-/api/webhooks/stripe
-/api/health
+hooks.bravoclient.co
 ```
 
-Si l'interface Access ne permet pas facilement les exclusions par chemin, utiliser une regle WAF a la place.
+Stripe doit appeler ce hostname, pas `cp.bravoclient.co`.
 
 ## Alternative simple : WAF Custom Rule
 
@@ -73,7 +86,7 @@ Cette option ajoute une friction Cloudflare, mais ne remplace pas une vraie auth
 Ne jamais bloquer :
 
 ```text
-https://cp.bravoclient.co/api/webhooks/stripe
+https://hooks.bravoclient.co/api/webhooks/stripe
 ```
 
 Stripe doit pouvoir appeler cette URL sans login Cloudflare.

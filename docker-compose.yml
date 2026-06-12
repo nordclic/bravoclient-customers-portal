@@ -68,7 +68,7 @@ services:
       - internal
     labels:
       traefik.enable: "true"
-      traefik.http.routers.bravoclient-app.rule: Host(`${APP_DOMAIN}`)
+      traefik.http.routers.bravoclient-app.rule: Host(`${APP_DOMAIN}`) || Host(`${WEBHOOK_DOMAIN}`)
       traefik.http.routers.bravoclient-app.entrypoints: websecure
       traefik.http.routers.bravoclient-app.tls: "true"
       traefik.http.routers.bravoclient-app.tls.certresolver: ${TRAEFIK_CERT_RESOLVER}

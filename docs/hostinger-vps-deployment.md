@@ -18,6 +18,7 @@ Le VPS Hostinger heberge un stack Docker separe pour BravoClient :
 - Deux sous-domaines pointant vers le VPS :
   - `cp.bravoclient.co`
   - `dt.bravoclient.co`
+  - `hooks.bravoclient.co`
 
 ## Cloudflare
 
@@ -26,6 +27,7 @@ Pour le premier deploiement, passer temporairement les deux entrees DNS en **DNS
 ```text
 cp.bravoclient.co  A  72.62.30.189
 dt.bravoclient.co  A  72.62.30.189
+hooks.bravoclient.co  A  72.62.30.189
 ```
 
 Si Cloudflare est en mode proxy orange, la resolution publique renvoie des IP Cloudflare. Cela peut fonctionner ensuite, mais complique parfois la creation initiale des certificats Let's Encrypt par Traefik.
@@ -91,7 +93,7 @@ docker compose exec app npx prisma migrate deploy
 Dans Stripe, ajouter le webhook :
 
 ```text
-https://cp.bravoclient.co/api/webhooks/stripe
+https://hooks.bravoclient.co/api/webhooks/stripe
 ```
 
 Evenements minimum :
