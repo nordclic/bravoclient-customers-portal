@@ -45,6 +45,15 @@ cp .env.production.example .env
 
 Modifier `.env` avec les vrais secrets.
 
+Le portail `cp.bravoclient.co` est protege par Basic Auth via :
+
+```env
+BASIC_AUTH_USER=bravoclient
+BASIC_AUTH_PASSWORD=<mot-de-passe-long>
+```
+
+Les endpoints `/api/webhooks/stripe` et `/api/health` restent publics pour Stripe et les controles de disponibilite.
+
 Verifier aussi `TRAEFIK_CERT_RESOLVER`. Le template Hostinger peut utiliser un nom de resolver different de `letsencrypt`. Si le domaine ne passe pas en HTTPS, c'est le premier champ a controler.
 
 Verifier ensuite le mode reseau de Traefik :

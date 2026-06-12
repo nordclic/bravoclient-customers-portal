@@ -12,6 +12,7 @@ Portail interne pour centraliser les clients BravoClient, synchroniser Stripe et
 - Stripe webhooks
 - Directus pour le back-office admin
 - Docker pour le deploiement VPS Hostinger
+- Basic Auth sur le portail `cp.bravoclient.co`
 
 ## Demarrage local
 
