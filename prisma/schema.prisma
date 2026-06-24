@@ -34,8 +34,11 @@ model Customer {
   stripeCustomerId     String?        @unique @map("stripe_customer_id")
   stripeSubscriptionId String?        @unique @map("stripe_subscription_id")
   climboAccountId      String?        @unique @map("climbo_account_id")
+  climboStatus         String?        @map("climbo_status")
+  climboIsActive       Boolean?       @map("climbo_is_active")
   climboSyncStatus     SyncStatus     @default(PENDING) @map("climbo_sync_status")
   climboLastSyncedAt   DateTime?      @map("climbo_last_synced_at")
+  climboLastCheckedAt  DateTime?      @map("climbo_last_checked_at")
   notes                String?
   metadata             Json?
   createdAt            DateTime       @default(now()) @map("created_at")
@@ -45,6 +48,7 @@ model Customer {
 
   @@index([status])
   @@index([climboSyncStatus])
+  @@index([climboIsActive])
   @@map("customers")
 }
 

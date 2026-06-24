@@ -59,24 +59,40 @@ async function syncCustomersFromStripe() {
   revalidatePath("/customers");
 }
 
-export default async function CustomersPage() {
-  const [customers, totalCustomers, trialCustomers, activeCustomers, failedSyncs] =
-    await Promise.all([
-      prisma.customer.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      }),
-      prisma.customer.count(),
-      prisma.customer.count({ where: { status: "TRIAL" } }),
-      prisma.customer.count({ where: { status: "ACTIVE" } }),
-      prisma.customer.count({ where: { climboSyncStatus: "FAILED" } }),
-    ]);
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ view?: string }>;
+}) {
+  const params = await searchParams;
+  const view = params?.view || "active";
+  const where = customerWhere(view);
+
+  const [
+    customers,
+    totalCustomers,
+    trialCustomers,
+    activeCustomers,
+    failedSyncs,
+    statusMismatches,
+  ] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    prisma.customer.count(),
+    prisma.customer.count({ where: { status: "TRIAL" } }),
+    prisma.customer.count({ where: { status: "ACTIVE" } }),
+    prisma.customer.count({ where: { climboSyncStatus: "FAILED" } }),
+    prisma.customer.count({ where: mismatchWhere() }),
+  ]);
 
   const metrics = [
     { label: "Clients", value: totalCustomers },
     { label: "Trials Stripe", value: trialCustomers },
     { label: "Clients actifs", value: activeCustomers },
-    { label: "Erreurs Climbo", value: failedSyncs },
+    { label: "Alertes Climbo", value: statusMismatches + failedSyncs },
   ];
 
   return (
@@ -169,14 +185,25 @@ export default async function CustomersPage() {
                 Clients en base
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Les 50 fiches les plus recentes.
+                Affichage par defaut des clients actifs et en trial.
               </p>
             </div>
-            <form action={syncCustomersFromStripe}>
-              <button className="h-10 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
-                Synchroniser Stripe
-              </button>
-            </form>
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterLink active={view === "active"} href="/customers">
+                Actifs
+              </FilterLink>
+              <FilterLink active={view === "alerts"} href="/customers?view=alerts">
+                Alertes
+              </FilterLink>
+              <FilterLink active={view === "all"} href="/customers?view=all">
+                Tous
+              </FilterLink>
+              <form action={syncCustomersFromStripe}>
+                <button className="h-10 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+                  Synchroniser Stripe
+                </button>
+              </form>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -188,6 +215,7 @@ export default async function CustomersPage() {
                   <HeaderCell>Plan</HeaderCell>
                   <HeaderCell>Climbo</HeaderCell>
                   <HeaderCell>Stripe</HeaderCell>
+                  <HeaderCell>Alerte</HeaderCell>
                   <HeaderCell>Creation</HeaderCell>
                 </tr>
               </thead>
@@ -195,7 +223,7 @@ export default async function CustomersPage() {
                 {customers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-5 py-10 text-center text-slate-500"
                     >
                       Aucun client pour le moment.
@@ -224,10 +252,20 @@ export default async function CustomersPage() {
                         {customer.plan || "-"}
                       </td>
                       <td className="px-5 py-4">
-                        <SyncBadge status={customer.climboSyncStatus} />
+                        <ClimboBadge
+                          isActive={customer.climboIsActive}
+                          status={customer.climboStatus}
+                          syncStatus={customer.climboSyncStatus}
+                        />
                       </td>
                       <td className="px-5 py-4 text-slate-700">
-                        {customer.stripeCustomerId ? "Connecte" : "-"}
+                        {stripeLabel(customer.status, customer.stripeCustomerId)}
+                      </td>
+                      <td className="px-5 py-4">
+                        <MismatchBadge
+                          stripeIsActive={stripeIsActive(customer.status)}
+                          climboIsActive={customer.climboIsActive}
+                        />
                       </td>
                       <td className="px-5 py-4 text-slate-500">
                         {formatDate(customer.createdAt)}
@@ -279,6 +317,29 @@ function HeaderCell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function FilterLink({
+  active,
+  href,
+  children,
+}: {
+  active: boolean;
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      className={`inline-flex h-10 items-center rounded-md px-3 text-sm font-semibold ${
+        active
+          ? "bg-slate-950 text-white"
+          : "border border-slate-300 text-slate-800 hover:bg-slate-50"
+      }`}
+    >
+      {children}
+    </a>
+  );
+}
+
 function StatusBadge({ status }: { status: CustomerStatus }) {
   const styles: Record<CustomerStatus, string> = {
     LEAD: "bg-slate-100 text-slate-700",
@@ -314,6 +375,68 @@ function SyncBadge({ status }: { status: SyncStatus }) {
   );
 }
 
+function ClimboBadge({
+  isActive,
+  status,
+  syncStatus,
+}: {
+  isActive: boolean | null;
+  status: string | null;
+  syncStatus: SyncStatus;
+}) {
+  if (isActive === true) {
+    return (
+      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+        Climbo actif
+      </span>
+    );
+  }
+
+  if (isActive === false) {
+    return (
+      <span className="inline-flex rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+        Climbo inactif
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+      {status || syncLabel(syncStatus)}
+    </span>
+  );
+}
+
+function MismatchBadge({
+  stripeIsActive,
+  climboIsActive,
+}: {
+  stripeIsActive: boolean;
+  climboIsActive: boolean | null;
+}) {
+  if (climboIsActive === null) {
+    return (
+      <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+        Climbo inconnu
+      </span>
+    );
+  }
+
+  if (stripeIsActive !== climboIsActive) {
+    return (
+      <span className="inline-flex rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+        Ecart
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+      OK
+    </span>
+  );
+}
+
 function statusLabel(status: CustomerStatus) {
   const labels: Record<CustomerStatus, string> = {
     LEAD: "Prospect",
@@ -343,6 +466,49 @@ function formatDate(date: Date) {
     month: "2-digit",
     year: "numeric",
   }).format(date);
+}
+
+function customerWhere(view: string) {
+  if (view === "all") {
+    return {};
+  }
+
+  if (view === "alerts") {
+    return mismatchWhere();
+  }
+
+  return {
+    status: {
+      in: ["ACTIVE", "TRIAL"] as CustomerStatus[],
+    },
+  };
+}
+
+function mismatchWhere() {
+  return {
+    OR: [
+      {
+        status: { in: ["ACTIVE", "TRIAL"] as CustomerStatus[] },
+        OR: [{ climboIsActive: false }, { climboIsActive: null }],
+      },
+      {
+        status: { notIn: ["ACTIVE", "TRIAL"] as CustomerStatus[] },
+        climboIsActive: true,
+      },
+    ],
+  };
+}
+
+function stripeIsActive(status: CustomerStatus) {
+  return status === "ACTIVE" || status === "TRIAL";
+}
+
+function stripeLabel(status: CustomerStatus, stripeCustomerId: string | null) {
+  if (!stripeCustomerId) {
+    return "-";
+  }
+
+  return stripeIsActive(status) ? "Actif Stripe" : "Inactif Stripe";
 }
 
 function getRequiredString(formData: FormData, name: string) {

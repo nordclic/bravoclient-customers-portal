@@ -20,8 +20,11 @@ Champs principaux :
 - `stripeCustomerId`
 - `stripeSubscriptionId`
 - `climboAccountId`
+- `climboStatus`
+- `climboIsActive`
 - `climboSyncStatus`
 - `climboLastSyncedAt`
+- `climboLastCheckedAt`
 - `notes`
 - `metadata`
 
@@ -59,3 +62,12 @@ Champs principaux :
 ## Regle importante
 
 Les champs Stripe et Climbo doivent etre modifies par l'application, pas manuellement dans Directus, sauf intervention de depannage.
+
+## Comparaison Stripe / Climbo
+
+Stripe determine l'etat commercial :
+
+- `TRIAL` et `ACTIVE` doivent correspondre a un compte Climbo actif.
+- `CANCELED`, `ARCHIVED` et les statuts non actifs doivent correspondre a un compte Climbo inactif.
+
+La page `/customers` affiche par defaut les clients actifs Stripe et signale les ecarts avec `climboIsActive`.
