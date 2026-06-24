@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { CustomerStatus, SyncStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { syncStripeCustomers } from "@/lib/stripe-customers-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,13 @@ async function createCustomer(formData: FormData) {
     },
   });
 
+  revalidatePath("/customers");
+}
+
+async function syncCustomersFromStripe() {
+  "use server";
+
+  await syncStripeCustomers();
   revalidatePath("/customers");
 }
 
@@ -164,6 +172,11 @@ export default async function CustomersPage() {
                 Les 50 fiches les plus recentes.
               </p>
             </div>
+            <form action={syncCustomersFromStripe}>
+              <button className="h-10 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+                Synchroniser Stripe
+              </button>
+            </form>
           </div>
 
           <div className="overflow-x-auto">
