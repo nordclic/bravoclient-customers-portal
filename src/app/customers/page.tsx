@@ -1,7 +1,10 @@
 import { revalidatePath } from "next/cache";
 import { CustomerStatus, SyncStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { compareCustomersWithClimbo } from "@/lib/climbo";
+import {
+  changeClimboClientStatus,
+  compareCustomersWithClimbo,
+} from "@/lib/climbo";
 import { syncStripeCustomers } from "@/lib/stripe-customers-sync";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +68,65 @@ async function compareCustomersFromClimbo() {
 
   await compareCustomersWithClimbo();
   revalidatePath("/customers");
+}
+
+async function pauseCustomerInClimbo(formData: FormData) {
+  "use server";
+
+  await updateCustomerClimboStatus(formData, "paused");
+  revalidatePath("/customers");
+}
+
+async function activateCustomerInClimbo(formData: FormData) {
+  "use server";
+
+  await updateCustomerClimboStatus(formData, "active");
+  revalidatePath("/customers");
+}
+
+async function updateCustomerClimboStatus(
+  formData: FormData,
+  status: "active" | "paused",
+) {
+  const customerId = getRequiredString(formData, "customerId");
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+  });
+
+  if (!customer?.climboAccountId) {
+    throw new Error("Customer does not have a Climbo account id yet");
+  }
+
+  const climboClient = await changeClimboClientStatus(
+    customer.climboAccountId,
+    status,
+  );
+  const now = new Date();
+
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: {
+      climboStatus: climboClient.status,
+      climboIsActive: stripeIsActiveClimboStatus(climboClient.status),
+      climboSyncStatus: "SYNCED",
+      climboLastCheckedAt: now,
+      climboLastSyncedAt: now,
+    },
+  });
+
+  await prisma.syncEvent.create({
+    data: {
+      customerId: customer.id,
+      provider: "climbo",
+      eventType: `manual.change_status.${status}`,
+      status: "SYNCED",
+      payload: {
+        climboClientId: customer.climboAccountId,
+        requestedStatus: status,
+        returnedStatus: climboClient.status,
+      },
+    },
+  });
 }
 
 export default async function CustomersPage({
@@ -229,6 +291,7 @@ export default async function CustomersPage({
                   <HeaderCell>Climbo</HeaderCell>
                   <HeaderCell>Stripe</HeaderCell>
                   <HeaderCell>Alerte</HeaderCell>
+                  <HeaderCell>Action</HeaderCell>
                   <HeaderCell>Creation</HeaderCell>
                 </tr>
               </thead>
@@ -236,7 +299,7 @@ export default async function CustomersPage({
                 {customers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-5 py-10 text-center text-slate-500"
                     >
                       Aucun client pour le moment.
@@ -280,6 +343,14 @@ export default async function CustomersPage({
                           climboIsActive={customer.climboIsActive}
                         />
                       </td>
+                      <td className="px-5 py-4">
+                        <ClimboStatusAction
+                          customerId={customer.id}
+                          climboAccountId={customer.climboAccountId}
+                          stripeIsActive={stripeIsActive(customer.status)}
+                          climboIsActive={customer.climboIsActive}
+                        />
+                      </td>
                       <td className="px-5 py-4 text-slate-500">
                         {formatDate(customer.createdAt)}
                       </td>
@@ -293,6 +364,50 @@ export default async function CustomersPage({
       </section>
     </main>
   );
+}
+
+function ClimboStatusAction({
+  customerId,
+  climboAccountId,
+  stripeIsActive,
+  climboIsActive,
+}: {
+  customerId: string;
+  climboAccountId: string | null;
+  stripeIsActive: boolean;
+  climboIsActive: boolean | null;
+}) {
+  if (!climboAccountId) {
+    return (
+      <span className="text-xs font-medium text-slate-500">
+        Comparer d'abord
+      </span>
+    );
+  }
+
+  if (!stripeIsActive && climboIsActive === true) {
+    return (
+      <form action={pauseCustomerInClimbo}>
+        <input type="hidden" name="customerId" value={customerId} />
+        <button className="h-9 rounded-md border border-amber-300 px-3 text-xs font-semibold text-amber-800 hover:bg-amber-50">
+          Mettre en pause
+        </button>
+      </form>
+    );
+  }
+
+  if (stripeIsActive && climboIsActive === false) {
+    return (
+      <form action={activateCustomerInClimbo}>
+        <input type="hidden" name="customerId" value={customerId} />
+        <button className="h-9 rounded-md border border-emerald-300 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-50">
+          Activer
+        </button>
+      </form>
+    );
+  }
+
+  return <span className="text-xs font-medium text-slate-500">-</span>;
 }
 
 function Field({
@@ -514,6 +629,10 @@ function mismatchWhere() {
 
 function stripeIsActive(status: CustomerStatus) {
   return status === "ACTIVE" || status === "TRIAL";
+}
+
+function stripeIsActiveClimboStatus(status: string) {
+  return status === "active" || status === "trialing";
 }
 
 function stripeLabel(status: CustomerStatus, stripeCustomerId: string | null) {

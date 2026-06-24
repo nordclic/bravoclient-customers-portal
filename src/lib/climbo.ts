@@ -46,6 +46,8 @@ type ClimboComparisonResult = {
   customersMissingInClimbo: number;
 };
 
+type ChangeClimboClientStatus = "active" | "trialing" | "unpaid" | "paused";
+
 const activeClimboStatuses = new Set(["active", "trialing"]);
 
 export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResult> {
@@ -144,6 +146,38 @@ export async function upsertClimboAccount(
   }
 
   return { accountId: data.accountId };
+}
+
+export async function changeClimboClientStatus(
+  clientId: string,
+  status: ChangeClimboClientStatus,
+) {
+  const baseUrl = process.env.CLIMBO_API_BASE_URL || "https://api.climbo.com";
+  const apiKey = process.env.CLIMBO_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("CLIMBO_API_KEY is not configured");
+  }
+
+  const url = new URL(`${baseUrl}/client/${clientId}/change-status`);
+  url.searchParams.set("status", status);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "x-api-key": apiKey,
+    },
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Climbo status change failed: ${response.status} ${details}`,
+    );
+  }
+
+  return (await response.json()) as ClimboClient;
 }
 
 async function getClimboClientsByEmail() {
