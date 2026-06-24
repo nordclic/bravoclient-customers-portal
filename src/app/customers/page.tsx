@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { CustomerStatus, SyncStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { compareCustomersWithClimbo } from "@/lib/climbo";
 import { syncStripeCustomers } from "@/lib/stripe-customers-sync";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,13 @@ async function syncCustomersFromStripe() {
   "use server";
 
   await syncStripeCustomers();
+  revalidatePath("/customers");
+}
+
+async function compareCustomersFromClimbo() {
+  "use server";
+
+  await compareCustomersWithClimbo();
   revalidatePath("/customers");
 }
 
@@ -201,6 +209,11 @@ export default async function CustomersPage({
               <form action={syncCustomersFromStripe}>
                 <button className="h-10 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
                   Synchroniser Stripe
+                </button>
+              </form>
+              <form action={compareCustomersFromClimbo}>
+                <button className="h-10 rounded-md border border-cyan-700 px-4 text-sm font-semibold text-cyan-800 hover:bg-cyan-50">
+                  Comparer Climbo
                 </button>
               </form>
             </div>
