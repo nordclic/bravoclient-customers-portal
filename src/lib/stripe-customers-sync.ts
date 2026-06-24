@@ -1,7 +1,7 @@
 import Stripe from "stripe";
-import { CustomerStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getStripe } from "@/lib/stripe";
+import { mapStripeSubscriptionStatus } from "@/lib/stripe-status";
 
 type StripeSyncResult = {
   customersImported: number;
@@ -9,10 +9,9 @@ type StripeSyncResult = {
   skippedCustomers: number;
 };
 
-type RankedSubscription = {
+type LatestSubscription = {
   subscription: Stripe.Subscription;
   customer: Stripe.Customer;
-  rank: number;
 };
 
 export async function syncStripeCustomers(): Promise<StripeSyncResult> {
@@ -32,7 +31,7 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
     customersImported += 1;
   }
 
-  const subscriptionsByCustomer = new Map<string, RankedSubscription>();
+  const subscriptionsByCustomer = new Map<string, LatestSubscription>();
 
   for await (const subscription of listStripeSubscriptions(stripe)) {
     const customer = getExpandedCustomer(subscription.customer);
@@ -48,19 +47,12 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
       continue;
     }
 
-    const rank = subscriptionRank(subscription);
     const existing = subscriptionsByCustomer.get(customer.id);
 
-    if (
-      !existing ||
-      rank > existing.rank ||
-      (rank === existing.rank &&
-        subscription.created > existing.subscription.created)
-    ) {
+    if (!existing || subscription.created > existing.subscription.created) {
       subscriptionsByCustomer.set(customer.id, {
         subscription,
         customer,
-        rank,
       });
     }
   }
@@ -172,7 +164,7 @@ async function upsertCustomerFromStripeSubscription(
       companyName: customerCompanyName(customer),
       contactName: customer.name,
       phone: customer.phone,
-      status: mapSubscriptionStatus(subscription.status),
+      status: mapStripeSubscriptionStatus(subscription.status),
       plan: subscriptionPlan(subscription),
       trialEndsAt: subscription.trial_end
         ? new Date(subscription.trial_end * 1000)
@@ -185,7 +177,7 @@ async function upsertCustomerFromStripeSubscription(
       contactName: customer.name,
       email,
       phone: customer.phone,
-      status: mapSubscriptionStatus(subscription.status),
+      status: mapStripeSubscriptionStatus(subscription.status),
       plan: subscriptionPlan(subscription),
       trialEndsAt: subscription.trial_end
         ? new Date(subscription.trial_end * 1000)
@@ -223,36 +215,6 @@ function subscriptionPlan(subscription: Stripe.Subscription) {
   const price = subscription.items.data[0]?.price;
 
   return price?.lookup_key || price?.nickname || price?.id || null;
-}
-
-function mapSubscriptionStatus(status: Stripe.Subscription.Status): CustomerStatus {
-  const statuses: Record<Stripe.Subscription.Status, CustomerStatus> = {
-    active: "ACTIVE",
-    canceled: "CANCELED",
-    incomplete: "LEAD",
-    incomplete_expired: "CANCELED",
-    past_due: "PAST_DUE",
-    paused: "PAST_DUE",
-    trialing: "TRIAL",
-    unpaid: "CANCELED",
-  };
-
-  return statuses[status] ?? "LEAD";
-}
-
-function subscriptionRank(subscription: Stripe.Subscription) {
-  const ranks: Record<Stripe.Subscription.Status, number> = {
-    active: 80,
-    trialing: 70,
-    past_due: 60,
-    paused: 50,
-    incomplete: 40,
-    unpaid: 30,
-    canceled: 20,
-    incomplete_expired: 10,
-  };
-
-  return ranks[subscription.status] ?? 0;
 }
 
 async function logSkippedStripeCustomer(stripeCustomerId: string, error: string) {

@@ -4,6 +4,7 @@ import Stripe from "stripe";
 import { upsertClimboAccount } from "@/lib/climbo";
 import { prisma } from "@/lib/prisma";
 import { getStripe } from "@/lib/stripe";
+import { mapStripeSubscriptionStatus } from "@/lib/stripe-status";
 
 export async function POST(request: Request) {
   const body = await request.text();
@@ -38,7 +39,8 @@ export async function POST(request: Request) {
 
   if (
     event.type === "customer.subscription.created" ||
-    event.type === "customer.subscription.updated"
+    event.type === "customer.subscription.updated" ||
+    event.type === "customer.subscription.deleted"
   ) {
     await handleSubscriptionEvent(stripe, event.data.object);
   }
@@ -71,6 +73,7 @@ async function handleSubscriptionEvent(
     stripeCustomer.metadata.companyName ||
     stripeCustomer.name ||
     email.split("@")[0];
+  const mappedStatus = mapStripeSubscriptionStatus(subscription.status);
 
   const customer = await prisma.customer.upsert({
     where: { email },
@@ -78,7 +81,7 @@ async function handleSubscriptionEvent(
       companyName,
       contactName: stripeCustomer.name,
       phone: stripeCustomer.phone,
-      status: subscription.status === "trialing" ? "TRIAL" : "ACTIVE",
+      status: mappedStatus,
       plan: subscription.items.data[0]?.price.lookup_key,
       trialEndsAt: subscription.trial_end
         ? new Date(subscription.trial_end * 1000)
@@ -91,7 +94,7 @@ async function handleSubscriptionEvent(
       contactName: stripeCustomer.name,
       email,
       phone: stripeCustomer.phone,
-      status: subscription.status === "trialing" ? "TRIAL" : "ACTIVE",
+      status: mappedStatus,
       plan: subscription.items.data[0]?.price.lookup_key,
       trialEndsAt: subscription.trial_end
         ? new Date(subscription.trial_end * 1000)
@@ -100,6 +103,10 @@ async function handleSubscriptionEvent(
       stripeSubscriptionId: subscription.id,
     },
   });
+
+  if (mappedStatus !== "ACTIVE" && mappedStatus !== "TRIAL") {
+    return;
+  }
 
   try {
     const climboAccount = await upsertClimboAccount({
