@@ -9,53 +9,6 @@ import { syncStripeCustomers } from "@/lib/stripe-customers-sync";
 
 export const dynamic = "force-dynamic";
 
-const customerStatuses: CustomerStatus[] = [
-  "LEAD",
-  "TRIAL",
-  "ACTIVE",
-  "PAST_DUE",
-  "CANCELED",
-  "ARCHIVED",
-];
-
-async function createCustomer(formData: FormData) {
-  "use server";
-
-  const companyName = getRequiredString(formData, "companyName");
-  const email = getRequiredString(formData, "email").toLowerCase();
-  const contactName = getOptionalString(formData, "contactName");
-  const phone = getOptionalString(formData, "phone");
-  const plan = getOptionalString(formData, "plan");
-  const notes = getOptionalString(formData, "notes");
-  const status = getStatus(formData.get("status"));
-  const trialEndsAt = getOptionalDate(formData, "trialEndsAt");
-
-  await prisma.customer.upsert({
-    where: { email },
-    update: {
-      companyName,
-      contactName,
-      phone,
-      status,
-      plan,
-      trialEndsAt,
-      notes,
-    },
-    create: {
-      companyName,
-      contactName,
-      email,
-      phone,
-      status,
-      plan,
-      trialEndsAt,
-      notes,
-    },
-  });
-
-  revalidatePath("/customers");
-}
-
 async function syncCustomersFromStripe() {
   "use server";
 
@@ -175,7 +128,7 @@ export default async function CustomersPage({
           Gestion clients
         </h1>
         <p className="max-w-3xl text-sm leading-6 text-slate-600">
-          Ajoute tes clients dans ta base independante, suis leur statut Stripe
+          Synchronise tes clients depuis Stripe, suis leur statut de paiement
           et prepare la synchronisation Climbo depuis un seul endroit.
         </p>
       </header>
@@ -194,60 +147,7 @@ export default async function CustomersPage({
         ))}
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[380px_1fr]">
-        <form
-          action={createCustomer}
-          className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-        >
-          <div className="flex flex-col gap-1">
-            <h2 className="text-base font-semibold text-slate-950">
-              Ajouter un client
-            </h2>
-            <p className="text-sm text-slate-500">
-              L email sert de cle unique. Si le client existe deja, sa fiche est
-              mise a jour.
-            </p>
-          </div>
-
-          <div className="mt-5 grid gap-4">
-            <Field label="Societe" name="companyName" required />
-            <Field label="Email" name="email" type="email" required />
-            <Field label="Contact" name="contactName" />
-            <Field label="Telephone" name="phone" />
-            <Field label="Plan" name="plan" placeholder="starter, pro..." />
-
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Statut</span>
-              <select
-                name="status"
-                defaultValue="LEAD"
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-cyan-600"
-              >
-                {customerStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(status)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <Field label="Fin de trial" name="trialEndsAt" type="date" />
-
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Notes</span>
-              <textarea
-                name="notes"
-                rows={4}
-                className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-cyan-600"
-              />
-            </label>
-
-            <button className="h-10 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
-              Enregistrer
-            </button>
-          </div>
-        </form>
-
+      <section>
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-4 border-b border-slate-200 p-5">
             <div>
@@ -408,33 +308,6 @@ function ClimboStatusAction({
   }
 
   return <span className="text-xs font-medium text-slate-500">-</span>;
-}
-
-function Field({
-  label,
-  name,
-  type = "text",
-  placeholder,
-  required = false,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="grid gap-1 text-sm">
-      <span className="font-medium text-slate-700">{label}</span>
-      <input
-        name={name}
-        type={type}
-        placeholder={placeholder}
-        required={required}
-        className="h-10 rounded-md border border-slate-300 px-3 text-slate-950 outline-none focus:border-cyan-600"
-      />
-    </label>
-  );
 }
 
 function HeaderCell({ children }: { children: React.ReactNode }) {
@@ -651,35 +524,4 @@ function getRequiredString(formData: FormData, name: string) {
   }
 
   return value.trim();
-}
-
-function getOptionalString(formData: FormData, name: string) {
-  const value = formData.get(name);
-
-  if (typeof value !== "string" || value.trim() === "") {
-    return null;
-  }
-
-  return value.trim();
-}
-
-function getStatus(value: FormDataEntryValue | null): CustomerStatus {
-  if (
-    typeof value === "string" &&
-    customerStatuses.includes(value as CustomerStatus)
-  ) {
-    return value as CustomerStatus;
-  }
-
-  return "LEAD";
-}
-
-function getOptionalDate(formData: FormData, name: string) {
-  const value = formData.get(name);
-
-  if (typeof value !== "string" || value.trim() === "") {
-    return null;
-  }
-
-  return new Date(`${value}T00:00:00.000Z`);
 }

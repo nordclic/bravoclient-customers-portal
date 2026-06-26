@@ -152,22 +152,10 @@ async function upsertCustomerFromStripeCustomer(customer: Stripe.Customer) {
     return;
   }
 
-  await prisma.customer.upsert({
-    where: { email },
-    update: {
-      companyName: customerCompanyName(customer),
-      contactName: customer.name,
-      phone: customer.phone,
-      stripeCustomerId: customer.id,
-    },
-    create: {
-      companyName: customerCompanyName(customer),
-      contactName: customer.name,
-      email,
-      phone: customer.phone,
-      stripeCustomerId: customer.id,
-      status: "LEAD",
-    },
+  await upsertCustomerFromStripeIdentity(customer.id, email, {
+    companyName: customerCompanyName(customer),
+    contactName: customer.name,
+    phone: customer.phone,
   });
 }
 
@@ -181,32 +169,59 @@ async function upsertCustomerFromStripeSubscription(
     return;
   }
 
+  await upsertCustomerFromStripeIdentity(customer.id, email, {
+    companyName: customerCompanyName(customer),
+    contactName: customer.name,
+    phone: customer.phone,
+    status: mapStripeSubscriptionStatus(subscription.status),
+    plan: subscriptionPlan(subscription),
+    trialEndsAt: subscription.trial_end
+      ? new Date(subscription.trial_end * 1000)
+      : null,
+    stripeSubscriptionId: subscription.id,
+  });
+}
+
+async function upsertCustomerFromStripeIdentity(
+  stripeCustomerId: string,
+  email: string,
+  data: {
+    companyName: string;
+    contactName: string | null;
+    phone: string | null;
+    status?: ReturnType<typeof mapStripeSubscriptionStatus>;
+    plan?: string | null;
+    trialEndsAt?: Date | null;
+    stripeSubscriptionId?: string;
+  },
+) {
+  const existingByStripeId = await prisma.customer.findUnique({
+    where: { stripeCustomerId },
+  });
+
+  if (existingByStripeId) {
+    await prisma.customer.update({
+      where: { id: existingByStripeId.id },
+      data: {
+        ...data,
+        email,
+        stripeCustomerId,
+      },
+    });
+    return;
+  }
+
   await prisma.customer.upsert({
     where: { email },
     update: {
-      companyName: customerCompanyName(customer),
-      contactName: customer.name,
-      phone: customer.phone,
-      status: mapStripeSubscriptionStatus(subscription.status),
-      plan: subscriptionPlan(subscription),
-      trialEndsAt: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000)
-        : null,
-      stripeCustomerId: customer.id,
-      stripeSubscriptionId: subscription.id,
+      ...data,
+      stripeCustomerId,
     },
     create: {
-      companyName: customerCompanyName(customer),
-      contactName: customer.name,
+      ...data,
       email,
-      phone: customer.phone,
-      status: mapStripeSubscriptionStatus(subscription.status),
-      plan: subscriptionPlan(subscription),
-      trialEndsAt: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000)
-        : null,
-      stripeCustomerId: customer.id,
-      stripeSubscriptionId: subscription.id,
+      stripeCustomerId,
+      status: data.status || "LEAD",
     },
   });
 }
