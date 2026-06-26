@@ -107,7 +107,7 @@ export default async function CustomersPage({
   ] = await Promise.all([
     prisma.customer.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { companyName: "asc" },
       take: 50,
     }),
     prisma.customer.count({ where: stripeCustomerWhere() }),
@@ -582,7 +582,7 @@ function formatMoney(cents: number, currency: string) {
 
 function customerWhere(view: string) {
   if (view === "all") {
-    return stripeCustomerWhere();
+    return activeCustomerWhere();
   }
 
   if (view === "alerts") {
@@ -609,6 +609,16 @@ function mismatchWhere() {
         status: { notIn: ["ACTIVE", "TRIAL"] as CustomerStatus[] },
         climboIsActive: true,
       },
+    ],
+  };
+}
+
+function activeCustomerWhere() {
+  return {
+    status: { not: "ARCHIVED" as CustomerStatus },
+    OR: [
+      { stripeCustomerId: { not: null } },
+      { customerSource: "AMBASSADOR" as const },
     ],
   };
 }

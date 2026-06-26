@@ -44,6 +44,7 @@ type ClimboComparisonResult = {
   climboClientsChecked: number;
   customersMatched: number;
   customersMissingInClimbo: number;
+  ambassadorsImported: number;
 };
 
 type ChangeClimboClientStatus = "active" | "trialing" | "unpaid" | "paused";
@@ -60,6 +61,7 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
   const checkedAt = new Date();
   let customersMatched = 0;
   let customersMissingInClimbo = 0;
+  let ambassadorsImported = 0;
 
   for (const customer of customers) {
     const climboClient = climboClientsByEmail.get(customer.email.toLowerCase());
@@ -95,6 +97,11 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
     });
   }
 
+  ambassadorsImported = await upsertAmbassadorCustomersFromClimbo(
+    Array.from(climboClientsByEmail.values()),
+    checkedAt,
+  );
+
   await prisma.syncEvent.create({
     data: {
       provider: "climbo",
@@ -104,6 +111,7 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
         climboClientsChecked: climboClientsByEmail.size,
         customersMatched,
         customersMissingInClimbo,
+        ambassadorsImported,
       },
     },
   });
@@ -112,6 +120,7 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
     climboClientsChecked: climboClientsByEmail.size,
     customersMatched,
     customersMissingInClimbo,
+    ambassadorsImported,
   };
 }
 
@@ -178,6 +187,84 @@ export async function changeClimboClientStatus(
   }
 
   return (await response.json()) as ClimboClient;
+}
+
+async function upsertAmbassadorCustomersFromClimbo(
+  climboClients: ClimboClient[],
+  checkedAt: Date,
+) {
+  let ambassadorsImported = 0;
+
+  for (const climboClient of climboClients) {
+    if (!isAmbassadorClient(climboClient)) {
+      continue;
+    }
+
+    const email = climboClient.email.toLowerCase();
+    const existingStripeCustomer = await prisma.customer.findFirst({
+      where: {
+        email,
+        stripeCustomerId: { not: null },
+      },
+    });
+
+    if (existingStripeCustomer) {
+      continue;
+    }
+
+    await prisma.customer.upsert({
+      where: { email },
+      update: {
+        customerSource: "AMBASSADOR",
+        companyName: climboClient.business_name,
+        contactName: climboClient.user_name,
+        plan: climboClient.plan_id,
+        status: activeClimboStatuses.has(climboClient.status)
+          ? "ACTIVE"
+          : "LEAD",
+        climboAccountId: climboClient.id,
+        climboIsActive: activeClimboStatuses.has(climboClient.status),
+        climboStatus: climboClient.status,
+        climboSyncStatus: "SYNCED",
+        climboLastCheckedAt: checkedAt,
+        climboLastSyncedAt: checkedAt,
+      },
+      create: {
+        customerSource: "AMBASSADOR",
+        companyName: climboClient.business_name,
+        contactName: climboClient.user_name,
+        email,
+        plan: climboClient.plan_id,
+        status: activeClimboStatuses.has(climboClient.status)
+          ? "ACTIVE"
+          : "LEAD",
+        climboAccountId: climboClient.id,
+        climboIsActive: activeClimboStatuses.has(climboClient.status),
+        climboStatus: climboClient.status,
+        climboSyncStatus: "SYNCED",
+        climboLastCheckedAt: checkedAt,
+        climboLastSyncedAt: checkedAt,
+      },
+    });
+
+    ambassadorsImported += 1;
+  }
+
+  return ambassadorsImported;
+}
+
+function isAmbassadorClient(climboClient: ClimboClient) {
+  const configuredPlanIds = (process.env.CLIMBO_AMBASSADOR_PLAN_IDS || "")
+    .split(",")
+    .map((planId) => planId.trim().toLowerCase())
+    .filter(Boolean);
+  const planId = climboClient.plan_id.toLowerCase();
+
+  return (
+    configuredPlanIds.includes(planId) ||
+    planId.includes("ambassador") ||
+    planId.includes("ambassadeur")
+  );
 }
 
 async function getClimboClientsByEmail() {
