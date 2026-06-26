@@ -88,7 +88,7 @@ export default async function CustomersPage({
   searchParams?: Promise<{ view?: string }>;
 }) {
   const params = await searchParams;
-  const view = params?.view || "active";
+  const view = params?.view || "all";
   const where = customerWhere(view);
 
   const [
@@ -161,18 +161,18 @@ export default async function CustomersPage({
                 Clients en base
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Affichage par defaut des clients actifs et en trial.
+                Affichage par defaut de tous les clients Stripe non archives.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <FilterLink active={view === "active"} href="/customers">
-                Actifs
+              <FilterLink active={view === "all"} href="/customers">
+                Tous
               </FilterLink>
               <FilterLink active={view === "alerts"} href="/customers?view=alerts">
                 Alertes
               </FilterLink>
-              <FilterLink active={view === "all"} href="/customers?view=all">
-                Tous
+              <FilterLink active={view === "active"} href="/customers?view=active">
+                Actifs
               </FilterLink>
               <form action={syncCustomersFromStripe}>
                 <button className="h-10 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
