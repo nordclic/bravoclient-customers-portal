@@ -7,6 +7,7 @@ type StripeSyncResult = {
   customersImported: number;
   subscriptionsImported: number;
   skippedCustomers: number;
+  failedCustomers: number;
 };
 
 type LatestSubscription = {
@@ -19,6 +20,7 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
   let customersImported = 0;
   let subscriptionsImported = 0;
   let skippedCustomers = 0;
+  let failedCustomers = 0;
 
   for await (const customer of listStripeCustomers(stripe)) {
     if (!customer.email) {
@@ -27,8 +29,17 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
       continue;
     }
 
-    await upsertCustomerFromStripeCustomer(customer);
-    customersImported += 1;
+    try {
+      await upsertCustomerFromStripeCustomer(customer);
+      customersImported += 1;
+    } catch (error) {
+      failedCustomers += 1;
+      await logFailedStripeCustomer(
+        customer.id,
+        "manual.customer_sync.customer_failed",
+        error,
+      );
+    }
   }
 
   const subscriptionsByCustomer = new Map<string, LatestSubscription>();
@@ -58,19 +69,30 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
   }
 
   for (const { subscription, customer } of subscriptionsByCustomer.values()) {
-    await upsertCustomerFromStripeSubscription(customer, subscription);
-    subscriptionsImported += 1;
+    try {
+      await upsertCustomerFromStripeSubscription(customer, subscription);
+      subscriptionsImported += 1;
+    } catch (error) {
+      failedCustomers += 1;
+      await logFailedStripeCustomer(
+        customer.id,
+        "manual.customer_sync.subscription_failed",
+        error,
+        subscription.id,
+      );
+    }
   }
 
   await prisma.syncEvent.create({
     data: {
       provider: "stripe",
       eventType: "manual.customer_sync",
-      status: "SYNCED",
+      status: failedCustomers > 0 ? "FAILED" : "SYNCED",
       payload: {
         customersImported,
         subscriptionsImported,
         skippedCustomers,
+        failedCustomers,
       },
     },
   });
@@ -79,6 +101,7 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
     customersImported,
     subscriptionsImported,
     skippedCustomers,
+    failedCustomers,
   };
 }
 
@@ -227,4 +250,32 @@ async function logSkippedStripeCustomer(stripeCustomerId: string, error: string)
       error,
     },
   });
+}
+
+async function logFailedStripeCustomer(
+  stripeCustomerId: string,
+  eventType: string,
+  error: unknown,
+  stripeSubscriptionId?: string,
+) {
+  await prisma.syncEvent.create({
+    data: {
+      provider: "stripe",
+      eventType,
+      status: "FAILED",
+      payload: {
+        stripeCustomerId,
+        ...(stripeSubscriptionId ? { stripeSubscriptionId } : {}),
+      },
+      error: errorToMessage(error),
+    },
+  });
+}
+
+function errorToMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }
