@@ -104,15 +104,21 @@ export default async function CustomersPage({
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.customer.count(),
-    prisma.customer.count({ where: { status: "TRIAL" } }),
-    prisma.customer.count({ where: { status: "ACTIVE" } }),
-    prisma.customer.count({ where: { climboSyncStatus: "FAILED" } }),
+    prisma.customer.count({ where: stripeCustomerWhere() }),
+    prisma.customer.count({
+      where: { ...stripeCustomerWhere(), status: "TRIAL" },
+    }),
+    prisma.customer.count({
+      where: { ...stripeCustomerWhere(), status: "ACTIVE" },
+    }),
+    prisma.customer.count({
+      where: { ...stripeCustomerWhere(), climboSyncStatus: "FAILED" },
+    }),
     prisma.customer.count({ where: mismatchWhere() }),
   ]);
 
   const metrics = [
-    { label: "Clients", value: totalCustomers },
+    { label: "Clients Stripe", value: totalCustomers },
     { label: "Trials Stripe", value: trialCustomers },
     { label: "Clients actifs", value: activeCustomers },
     { label: "Alertes Climbo", value: statusMismatches + failedSyncs },
@@ -471,7 +477,7 @@ function formatDate(date: Date) {
 
 function customerWhere(view: string) {
   if (view === "all") {
-    return {};
+    return stripeCustomerWhere();
   }
 
   if (view === "alerts") {
@@ -479,6 +485,7 @@ function customerWhere(view: string) {
   }
 
   return {
+    ...stripeCustomerWhere(),
     status: {
       in: ["ACTIVE", "TRIAL"] as CustomerStatus[],
     },
@@ -487,6 +494,7 @@ function customerWhere(view: string) {
 
 function mismatchWhere() {
   return {
+    ...stripeCustomerWhere(),
     OR: [
       {
         status: { in: ["ACTIVE", "TRIAL"] as CustomerStatus[] },
@@ -497,6 +505,12 @@ function mismatchWhere() {
         climboIsActive: true,
       },
     ],
+  };
+}
+
+function stripeCustomerWhere() {
+  return {
+    stripeCustomerId: { not: null },
   };
 }
 
