@@ -220,6 +220,15 @@ export default async function CustomersPage({
               <FilterLink active={view === "all"} href="/customers">
                 Tous
               </FilterLink>
+              <FilterLink active={view === "stripe"} href="/customers?view=stripe">
+                Stripe
+              </FilterLink>
+              <FilterLink
+                active={view === "ambassadors"}
+                href="/customers?view=ambassadors"
+              >
+                Ambassadors
+              </FilterLink>
               <FilterLink active={view === "alerts"} href="/customers?view=alerts">
                 Alertes
               </FilterLink>
@@ -589,8 +598,16 @@ function customerWhere(view: string) {
     return mismatchWhere();
   }
 
+  if (view === "stripe") {
+    return stripeCustomerWhere();
+  }
+
+  if (view === "ambassadors") {
+    return ambassadorCustomerWhere();
+  }
+
   return {
-    ...stripeCustomerWhere(),
+    ...activeCustomerWhere(),
     status: {
       in: ["ACTIVE", "TRIAL"] as CustomerStatus[],
     },
@@ -620,6 +637,13 @@ function activeCustomerWhere() {
       { stripeCustomerId: { not: null } },
       { customerSource: "AMBASSADOR" as const },
     ],
+  };
+}
+
+function ambassadorCustomerWhere() {
+  return {
+    customerSource: "AMBASSADOR" as const,
+    status: { not: "ARCHIVED" as CustomerStatus },
   };
 }
 

@@ -84,6 +84,8 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
 
     customersMatched += 1;
 
+    await releaseClimboAccountFromOtherCustomers(customer.id, climboClient.id);
+
     await prisma.customer.update({
       where: { id: customer.id },
       data: {
@@ -201,6 +203,14 @@ async function upsertAmbassadorCustomersFromClimbo(
     }
 
     const email = climboClient.email.toLowerCase();
+    const existingCustomerByClimboId = await prisma.customer.findUnique({
+      where: { climboAccountId: climboClient.id },
+    });
+
+    if (existingCustomerByClimboId?.stripeCustomerId) {
+      continue;
+    }
+
     const existingStripeCustomer = await prisma.customer.findFirst({
       where: {
         email,
@@ -212,45 +222,67 @@ async function upsertAmbassadorCustomersFromClimbo(
       continue;
     }
 
-    await prisma.customer.upsert({
-      where: { email },
-      update: {
-        customerSource: "AMBASSADOR",
-        companyName: climboClient.business_name,
-        contactName: climboClient.user_name,
-        plan: climboClient.plan_id,
-        status: activeClimboStatuses.has(climboClient.status)
-          ? "ACTIVE"
-          : "LEAD",
-        climboAccountId: climboClient.id,
-        climboIsActive: activeClimboStatuses.has(climboClient.status),
-        climboStatus: climboClient.status,
-        climboSyncStatus: "SYNCED",
-        climboLastCheckedAt: checkedAt,
-        climboLastSyncedAt: checkedAt,
-      },
-      create: {
-        customerSource: "AMBASSADOR",
-        companyName: climboClient.business_name,
-        contactName: climboClient.user_name,
-        email,
-        plan: climboClient.plan_id,
-        status: activeClimboStatuses.has(climboClient.status)
-          ? "ACTIVE"
-          : "LEAD",
-        climboAccountId: climboClient.id,
-        climboIsActive: activeClimboStatuses.has(climboClient.status),
-        climboStatus: climboClient.status,
-        climboSyncStatus: "SYNCED",
-        climboLastCheckedAt: checkedAt,
-        climboLastSyncedAt: checkedAt,
-      },
-    });
+    const data = ambassadorCustomerData(climboClient, checkedAt);
+
+    if (existingCustomerByClimboId) {
+      await prisma.customer.update({
+        where: { id: existingCustomerByClimboId.id },
+        data: {
+          ...data,
+          email,
+        },
+      });
+    } else {
+      await prisma.customer.upsert({
+        where: { email },
+        update: data,
+        create: {
+          ...data,
+          email,
+        },
+      });
+    }
 
     ambassadorsImported += 1;
   }
 
   return ambassadorsImported;
+}
+
+async function releaseClimboAccountFromOtherCustomers(
+  customerId: string,
+  climboAccountId: string,
+) {
+  await prisma.customer.updateMany({
+    where: {
+      id: { not: customerId },
+      climboAccountId,
+    },
+    data: {
+      climboAccountId: null,
+      climboIsActive: null,
+      climboStatus: null,
+      climboSyncStatus: "PENDING",
+    },
+  });
+}
+
+function ambassadorCustomerData(climboClient: ClimboClient, checkedAt: Date) {
+  return {
+    customerSource: "AMBASSADOR" as const,
+    companyName: climboClient.business_name,
+    contactName: climboClient.user_name,
+    plan: climboClient.plan_id,
+    status: activeClimboStatuses.has(climboClient.status)
+      ? ("ACTIVE" as const)
+      : ("LEAD" as const),
+    climboAccountId: climboClient.id,
+    climboIsActive: activeClimboStatuses.has(climboClient.status),
+    climboStatus: climboClient.status,
+    climboSyncStatus: "SYNCED" as const,
+    climboLastCheckedAt: checkedAt,
+    climboLastSyncedAt: checkedAt,
+  };
 }
 
 function isAmbassadorClient(climboClient: ClimboClient) {
