@@ -8,6 +8,7 @@ type StripeSyncResult = {
   subscriptionsImported: number;
   skippedCustomers: number;
   failedCustomers: number;
+  archivedCustomers: number;
 };
 
 type LatestSubscription = {
@@ -21,8 +22,12 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
   let subscriptionsImported = 0;
   let skippedCustomers = 0;
   let failedCustomers = 0;
+  let archivedCustomers = 0;
+  const currentStripeCustomerIds = new Set<string>();
 
   for await (const customer of listStripeCustomers(stripe)) {
+    currentStripeCustomerIds.add(customer.id);
+
     if (!customer.email) {
       skippedCustomers += 1;
       await logSkippedStripeCustomer(customer.id, "Stripe customer has no email");
@@ -83,6 +88,10 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
     }
   }
 
+  archivedCustomers = await archiveCustomersMissingFromStripe(
+    currentStripeCustomerIds,
+  );
+
   await prisma.syncEvent.create({
     data: {
       provider: "stripe",
@@ -93,6 +102,7 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
         subscriptionsImported,
         skippedCustomers,
         failedCustomers,
+        archivedCustomers,
       },
     },
   });
@@ -102,6 +112,7 @@ export async function syncStripeCustomers(): Promise<StripeSyncResult> {
     subscriptionsImported,
     skippedCustomers,
     failedCustomers,
+    archivedCustomers,
   };
 }
 
@@ -224,6 +235,25 @@ async function upsertCustomerFromStripeIdentity(
       status: data.status || "LEAD",
     },
   });
+}
+
+async function archiveCustomersMissingFromStripe(
+  currentStripeCustomerIds: Set<string>,
+) {
+  const result = await prisma.customer.updateMany({
+    where: {
+      AND: [
+        { stripeCustomerId: { not: null } },
+        { stripeCustomerId: { notIn: Array.from(currentStripeCustomerIds) } },
+        { status: { not: "ARCHIVED" } },
+      ],
+    },
+    data: {
+      status: "ARCHIVED",
+    },
+  });
+
+  return result.count;
 }
 
 function getExpandedCustomer(

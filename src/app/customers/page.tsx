@@ -511,6 +511,7 @@ function mismatchWhere() {
 function stripeCustomerWhere() {
   return {
     stripeCustomerId: { not: null },
+    status: { not: "ARCHIVED" as CustomerStatus },
   };
 }
 
