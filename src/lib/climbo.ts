@@ -45,6 +45,8 @@ type ClimboComparisonResult = {
   customersMatched: number;
   customersMissingInClimbo: number;
   ambassadorsImported: number;
+  ambassadorImportErrors: number;
+  climboClientsSkipped: number;
 };
 
 type ChangeClimboClientStatus = "active" | "trialing" | "unpaid" | "paused";
@@ -62,6 +64,8 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
   let customersMatched = 0;
   let customersMissingInClimbo = 0;
   let ambassadorsImported = 0;
+  let ambassadorImportErrors = 0;
+  let climboClientsSkipped = 0;
 
   for (const customer of customers) {
     const climboClient = climboClientsByEmail.get(customer.email.toLowerCase());
@@ -99,21 +103,26 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
     });
   }
 
-  ambassadorsImported = await upsertAmbassadorCustomersFromClimbo(
+  const ambassadorImport = await upsertAmbassadorCustomersFromClimbo(
     Array.from(climboClientsByEmail.values()),
     checkedAt,
   );
+  ambassadorsImported = ambassadorImport.imported;
+  ambassadorImportErrors = ambassadorImport.errors;
+  climboClientsSkipped = ambassadorImport.skipped;
 
   await prisma.syncEvent.create({
     data: {
       provider: "climbo",
       eventType: "manual.customer_comparison",
-      status: customersMissingInClimbo > 0 ? "FAILED" : "SYNCED",
+      status: ambassadorImportErrors > 0 ? "FAILED" : "SYNCED",
       payload: {
         climboClientsChecked: climboClientsByEmail.size,
         customersMatched,
         customersMissingInClimbo,
         ambassadorsImported,
+        ambassadorImportErrors,
+        climboClientsSkipped,
       },
     },
   });
@@ -123,6 +132,8 @@ export async function compareCustomersWithClimbo(): Promise<ClimboComparisonResu
     customersMatched,
     customersMissingInClimbo,
     ambassadorsImported,
+    ambassadorImportErrors,
+    climboClientsSkipped,
   };
 }
 
@@ -196,57 +207,85 @@ async function upsertAmbassadorCustomersFromClimbo(
   checkedAt: Date,
 ) {
   let ambassadorsImported = 0;
+  let ambassadorImportErrors = 0;
+  let climboClientsSkipped = 0;
 
   for (const climboClient of climboClients) {
+    if (!climboClient.email) {
+      climboClientsSkipped += 1;
+      continue;
+    }
+
     if (!isAmbassadorClient(climboClient)) {
       continue;
     }
 
-    const email = climboClient.email.toLowerCase();
-    const existingCustomerByClimboId = await prisma.customer.findUnique({
-      where: { climboAccountId: climboClient.id },
-    });
+    try {
+      const email = climboClient.email.toLowerCase();
+      const existingCustomerByClimboId = await prisma.customer.findUnique({
+        where: { climboAccountId: climboClient.id },
+      });
 
-    if (existingCustomerByClimboId?.stripeCustomerId) {
-      continue;
-    }
+      if (existingCustomerByClimboId?.stripeCustomerId) {
+        continue;
+      }
 
-    const existingStripeCustomer = await prisma.customer.findFirst({
-      where: {
-        email,
-        stripeCustomerId: { not: null },
-      },
-    });
+      const existingStripeCustomer = await prisma.customer.findFirst({
+        where: {
+          email,
+          stripeCustomerId: { not: null },
+        },
+      });
 
-    if (existingStripeCustomer) {
-      continue;
-    }
+      if (existingStripeCustomer) {
+        continue;
+      }
 
-    const data = ambassadorCustomerData(climboClient, checkedAt);
+      const data = ambassadorCustomerData(climboClient, checkedAt);
 
-    if (existingCustomerByClimboId) {
-      await prisma.customer.update({
-        where: { id: existingCustomerByClimboId.id },
+      if (existingCustomerByClimboId) {
+        await prisma.customer.update({
+          where: { id: existingCustomerByClimboId.id },
+          data: {
+            ...data,
+            email,
+          },
+        });
+      } else {
+        await prisma.customer.upsert({
+          where: { email },
+          update: data,
+          create: {
+            ...data,
+            email,
+          },
+        });
+      }
+
+      ambassadorsImported += 1;
+    } catch (error) {
+      ambassadorImportErrors += 1;
+      await prisma.syncEvent.create({
         data: {
-          ...data,
-          email,
-        },
-      });
-    } else {
-      await prisma.customer.upsert({
-        where: { email },
-        update: data,
-        create: {
-          ...data,
-          email,
+          provider: "climbo",
+          eventType: "manual.ambassador_import_failed",
+          status: "FAILED",
+          payload: {
+            climboClientId: climboClient.id,
+            email: climboClient.email,
+            planId: climboClient.plan_id,
+          },
+          error: errorToMessage(error),
         },
       });
     }
-
-    ambassadorsImported += 1;
   }
 
-  return ambassadorsImported;
+  return {
+    imported: ambassadorsImported,
+    errors: ambassadorImportErrors,
+    skipped: climboClientsSkipped,
+  };
 }
 
 async function releaseClimboAccountFromOtherCustomers(
@@ -290,13 +329,22 @@ function isAmbassadorClient(climboClient: ClimboClient) {
     .split(",")
     .map((planId) => planId.trim().toLowerCase())
     .filter(Boolean);
-  const planId = climboClient.plan_id.toLowerCase();
+  const planId = (climboClient.plan_id || "").toLowerCase();
 
   return (
+    climboClient.source === "climbo" ||
     configuredPlanIds.includes(planId) ||
     planId.includes("ambassador") ||
     planId.includes("ambassadeur")
   );
+}
+
+function errorToMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }
 
 async function getClimboClientsByEmail() {
@@ -308,6 +356,10 @@ async function getClimboClientsByEmail() {
     const result = await listClimboClients(page);
 
     for (const client of result.clients || []) {
+      if (!client.email) {
+        continue;
+      }
+
       clients.set(client.email.toLowerCase(), client);
     }
 
