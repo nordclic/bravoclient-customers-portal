@@ -154,8 +154,8 @@ async function upsertCustomerFromStripeCustomer(customer: Stripe.Customer) {
 
   await upsertCustomerFromStripeIdentity(customer.id, email, {
     companyName: customerCompanyName(customer),
-    contactName: customer.name,
-    phone: customer.phone,
+    contactName: customer.name ?? null,
+    phone: customer.phone ?? null,
   });
 }
 
@@ -171,8 +171,8 @@ async function upsertCustomerFromStripeSubscription(
 
   await upsertCustomerFromStripeIdentity(customer.id, email, {
     companyName: customerCompanyName(customer),
-    contactName: customer.name,
-    phone: customer.phone,
+    contactName: customer.name ?? null,
+    phone: customer.phone ?? null,
     status: mapStripeSubscriptionStatus(subscription.status),
     plan: subscriptionPlan(subscription),
     trialEndsAt: subscription.trial_end
