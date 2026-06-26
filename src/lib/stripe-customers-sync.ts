@@ -164,6 +164,7 @@ async function upsertCustomerFromStripeCustomer(customer: Stripe.Customer) {
   }
 
   await upsertCustomerFromStripeIdentity(customer.id, email, {
+    customerSource: "STRIPE",
     companyName: customerCompanyName(customer),
     contactName: customer.name ?? null,
     phone: customer.phone ?? null,
@@ -181,6 +182,7 @@ async function upsertCustomerFromStripeSubscription(
   }
 
   await upsertCustomerFromStripeIdentity(customer.id, email, {
+    customerSource: "STRIPE",
     companyName: customerCompanyName(customer),
     contactName: customer.name ?? null,
     phone: customer.phone ?? null,
@@ -190,6 +192,13 @@ async function upsertCustomerFromStripeSubscription(
       ? new Date(subscription.trial_end * 1000)
       : null,
     stripeSubscriptionId: subscription.id,
+    stripePriceId: subscriptionPriceId(subscription),
+    stripeProductId: subscriptionProductId(subscription),
+    stripeCurrency: subscriptionCurrency(subscription),
+    stripeInterval: subscriptionInterval(subscription),
+    stripeIntervalCount: subscriptionIntervalCount(subscription),
+    monthlyRevenueCents: subscriptionMonthlyRevenueCents(subscription),
+    stripeCurrentPeriodEnd: subscriptionCurrentPeriodEnd(subscription),
   });
 }
 
@@ -197,6 +206,7 @@ async function upsertCustomerFromStripeIdentity(
   stripeCustomerId: string,
   email: string,
   data: {
+    customerSource: "STRIPE";
     companyName: string;
     contactName: string | null;
     phone: string | null;
@@ -204,6 +214,13 @@ async function upsertCustomerFromStripeIdentity(
     plan?: string | null;
     trialEndsAt?: Date | null;
     stripeSubscriptionId?: string;
+    stripePriceId?: string | null;
+    stripeProductId?: string | null;
+    stripeCurrency?: string | null;
+    stripeInterval?: string | null;
+    stripeIntervalCount?: number | null;
+    monthlyRevenueCents?: number;
+    stripeCurrentPeriodEnd?: Date | null;
   },
 ) {
   const existingByStripeId = await prisma.customer.findUnique({
@@ -283,6 +300,72 @@ function subscriptionPlan(subscription: Stripe.Subscription) {
   const price = subscription.items.data[0]?.price;
 
   return price?.lookup_key || price?.nickname || price?.id || null;
+}
+
+function subscriptionPriceId(subscription: Stripe.Subscription) {
+  return subscription.items.data[0]?.price.id || null;
+}
+
+function subscriptionProductId(subscription: Stripe.Subscription) {
+  const product = subscription.items.data[0]?.price.product;
+
+  if (!product) {
+    return null;
+  }
+
+  return typeof product === "string" ? product : product.id;
+}
+
+function subscriptionCurrency(subscription: Stripe.Subscription) {
+  return subscription.items.data[0]?.price.currency?.toUpperCase() || null;
+}
+
+function subscriptionInterval(subscription: Stripe.Subscription) {
+  return subscription.items.data[0]?.price.recurring?.interval || null;
+}
+
+function subscriptionIntervalCount(subscription: Stripe.Subscription) {
+  return subscription.items.data[0]?.price.recurring?.interval_count || null;
+}
+
+function subscriptionCurrentPeriodEnd(subscription: Stripe.Subscription) {
+  const currentPeriodEnd = (
+    subscription as Stripe.Subscription & { current_period_end?: number }
+  ).current_period_end;
+
+  return currentPeriodEnd ? new Date(currentPeriodEnd * 1000) : null;
+}
+
+function subscriptionMonthlyRevenueCents(subscription: Stripe.Subscription) {
+  if (subscription.status !== "active") {
+    return 0;
+  }
+
+  return subscription.items.data.reduce((total, item) => {
+    const unitAmount = item.price.unit_amount || 0;
+    const quantity = item.quantity || 1;
+    const interval = item.price.recurring?.interval;
+    const intervalCount = item.price.recurring?.interval_count || 1;
+    const recurringAmount = unitAmount * quantity;
+
+    if (interval === "month") {
+      return total + Math.round(recurringAmount / intervalCount);
+    }
+
+    if (interval === "year") {
+      return total + Math.round(recurringAmount / (12 * intervalCount));
+    }
+
+    if (interval === "week") {
+      return total + Math.round((recurringAmount * 52) / (12 * intervalCount));
+    }
+
+    if (interval === "day") {
+      return total + Math.round((recurringAmount * 365) / (12 * intervalCount));
+    }
+
+    return total;
+  }, 0);
 }
 
 async function logSkippedStripeCustomer(stripeCustomerId: string, error: string) {

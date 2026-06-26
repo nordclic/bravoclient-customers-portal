@@ -96,8 +96,14 @@ export default async function CustomersPage({
     totalCustomers,
     trialCustomers,
     activeCustomers,
+    pastDueCustomers,
+    ambassadorCustomers,
     failedSyncs,
     statusMismatches,
+    monthlyRevenue,
+    revenueCurrency,
+    latestStripeSync,
+    latestClimboSync,
   ] = await Promise.all([
     prisma.customer.findMany({
       where,
@@ -112,15 +118,50 @@ export default async function CustomersPage({
       where: { ...stripeCustomerWhere(), status: "ACTIVE" },
     }),
     prisma.customer.count({
+      where: { ...stripeCustomerWhere(), status: "PAST_DUE" },
+    }),
+    prisma.customer.count({
+      where: { customerSource: "AMBASSADOR", status: { not: "ARCHIVED" } },
+    }),
+    prisma.customer.count({
       where: { ...stripeCustomerWhere(), climboSyncStatus: "FAILED" },
     }),
     prisma.customer.count({ where: mismatchWhere() }),
+    prisma.customer.aggregate({
+      where: { ...stripeCustomerWhere(), status: "ACTIVE" },
+      _sum: { monthlyRevenueCents: true },
+    }),
+    prisma.customer.findFirst({
+      where: {
+        ...stripeCustomerWhere(),
+        status: "ACTIVE",
+        stripeCurrency: { not: null },
+      },
+      select: { stripeCurrency: true },
+    }),
+    prisma.syncEvent.findFirst({
+      where: { provider: "stripe", eventType: "manual.customer_sync" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.syncEvent.findFirst({
+      where: { provider: "climbo", eventType: "manual.customer_comparison" },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   const metrics = [
-    { label: "Clients Stripe", value: totalCustomers },
+    {
+      label: "MRR Stripe",
+      value: formatMoney(
+        monthlyRevenue._sum.monthlyRevenueCents || 0,
+        revenueCurrency?.stripeCurrency || "EUR",
+      ),
+    },
+    { label: "Clients Stripe", value: totalCustomers.toString() },
     { label: "Trials Stripe", value: trialCustomers },
     { label: "Clients actifs", value: activeCustomers },
+    { label: "Paiements en retard", value: pastDueCustomers },
+    { label: "Ambassadors", value: ambassadorCustomers },
     { label: "Alertes Climbo", value: statusMismatches + failedSyncs },
   ];
 
@@ -139,7 +180,7 @@ export default async function CustomersPage({
         </p>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         {metrics.map((metric) => (
           <div
             key={metric.label}
@@ -151,6 +192,17 @@ export default async function CustomersPage({
             </p>
           </div>
         ))}
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-2">
+        <SyncSummaryCard
+          title="Derniere synchro Stripe"
+          event={latestStripeSync}
+        />
+        <SyncSummaryCard
+          title="Derniere comparaison Climbo"
+          event={latestClimboSync}
+        />
       </section>
 
       <section>
@@ -196,6 +248,7 @@ export default async function CustomersPage({
                   <HeaderCell>Plan</HeaderCell>
                   <HeaderCell>Climbo</HeaderCell>
                   <HeaderCell>Stripe</HeaderCell>
+                  <HeaderCell>Echeance</HeaderCell>
                   <HeaderCell>Alerte</HeaderCell>
                   <HeaderCell>Action</HeaderCell>
                   <HeaderCell>Creation</HeaderCell>
@@ -205,7 +258,7 @@ export default async function CustomersPage({
                 {customers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-5 py-10 text-center text-slate-500"
                     >
                       Aucun client pour le moment.
@@ -242,6 +295,11 @@ export default async function CustomersPage({
                       </td>
                       <td className="px-5 py-4 text-slate-700">
                         {stripeLabel(customer.status, customer.stripeCustomerId)}
+                      </td>
+                      <td className="px-5 py-4 text-slate-500">
+                        {formatNullableDate(
+                          customer.stripeCurrentPeriodEnd || customer.trialEndsAt,
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <MismatchBadge
@@ -314,6 +372,31 @@ function ClimboStatusAction({
   }
 
   return <span className="text-xs font-medium text-slate-500">-</span>;
+}
+
+function SyncSummaryCard({
+  title,
+  event,
+}: {
+  title: string;
+  event: { createdAt: Date; status: SyncStatus; error: string | null } | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div>
+        <p className="text-sm font-medium text-slate-950">{title}</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {event ? formatDateTime(event.createdAt) : "Jamais lancee"}
+        </p>
+        {event?.error ? (
+          <p className="mt-1 max-w-xl truncate text-xs text-rose-600">
+            {event.error}
+          </p>
+        ) : null}
+      </div>
+      {event ? <SyncBadge status={event.status} /> : null}
+    </div>
+  );
 }
 
 function HeaderCell({ children }: { children: React.ReactNode }) {
@@ -473,6 +556,28 @@ function formatDate(date: Date) {
     month: "2-digit",
     year: "numeric",
   }).format(date);
+}
+
+function formatNullableDate(date: Date | null) {
+  return date ? formatDate(date) : "-";
+}
+
+function formatDateTime(date: Date) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatMoney(cents: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
 }
 
 function customerWhere(view: string) {

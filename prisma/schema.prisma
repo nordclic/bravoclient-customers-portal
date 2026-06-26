@@ -22,8 +22,14 @@ enum SyncStatus {
   FAILED
 }
 
+enum CustomerSource {
+  STRIPE
+  AMBASSADOR
+}
+
 model Customer {
   id                   String         @id @default(cuid())
+  customerSource       CustomerSource @default(STRIPE) @map("customer_source")
   companyName          String         @map("company_name")
   contactName          String?        @map("contact_name")
   email                String         @unique
@@ -33,6 +39,13 @@ model Customer {
   trialEndsAt          DateTime?      @map("trial_ends_at")
   stripeCustomerId     String?        @unique @map("stripe_customer_id")
   stripeSubscriptionId String?        @unique @map("stripe_subscription_id")
+  stripePriceId        String?        @map("stripe_price_id")
+  stripeProductId      String?        @map("stripe_product_id")
+  stripeCurrency       String?        @map("stripe_currency")
+  stripeInterval       String?        @map("stripe_interval")
+  stripeIntervalCount  Int?           @map("stripe_interval_count")
+  monthlyRevenueCents  Int            @default(0) @map("monthly_revenue_cents")
+  stripeCurrentPeriodEnd DateTime?    @map("stripe_current_period_end")
   climboAccountId      String?        @unique @map("climbo_account_id")
   climboStatus         String?        @map("climbo_status")
   climboIsActive       Boolean?       @map("climbo_is_active")
@@ -47,6 +60,7 @@ model Customer {
   syncEvents SyncEvent[]
 
   @@index([status])
+  @@index([customerSource])
   @@index([climboSyncStatus])
   @@index([climboIsActive])
   @@map("customers")
